@@ -308,8 +308,54 @@ if st.button("🚀 Translate"):
                                 st.audio(audio_buf, format="audio/mp3")
                                 st.download_button("🔊 Download Audio", audio_buf.getvalue(), file_name="translation.mp3", mime="audio/mpeg")
                             except Exception as e:
-                                st.info(f"Speech not available for {target_name}: {e}")
-                        else:
-                            st.info(f"Speech not supported for target language: {target_name}")
-                    else:
-                        st.error(error or "Translation failed")
+
+                                with st.spinner("Translating..."):
+                                    # Prefer backend if configured; otherwise use cloud providers directly
+                                    translated = None
+                                    error = None
+                                    if API_BASE:
+                                        api_url = f"{API_BASE}/translate"
+                                        try:
+                                            response = requests.post(api_url, json=payload, timeout=30)
+                                            if response.ok:
+                                                data = response.json()
+                                                translated = data.get("translated_text", "")
+                                                if not translated:
+                                                    error = "Backend returned no translated text."
+                                            else:
+                                                try:
+                                                    err = response.json().get("detail")
+                                                except Exception:
+                                                    err = response.text
+                                                error = f"Translation failed ({response.status_code}).\n{err}"
+                                        except requests.RequestException:
+                                            # Backend unreachable → fall back to cloud providers
+                                            translated, error = cloud_translate(text, source_languages[source_name], target_languages[target_name])
+                                    else:
+                                        translated, error = cloud_translate(text, source_languages[source_name], target_languages[target_name])
+
+                                    if translated:
+                                        st.success("✅ Translated Text")
+                                        st.code(translated)
+
+                                        # Download translated text
+                                        st.download_button("⬇️ Download Text", translated, file_name="translation.txt")
+
+                                        # Text-to-speech for the translated output (target language only)
+                                        supported_tts = tts_langs()
+                                        tts_code_map = {"zh": "zh-CN", "tl": "fil", "no": "no"}
+                                        tts_lang = tts_code_map.get(target_languages[target_name], target_languages[target_name])
+                                        if tts_lang in supported_tts:
+                                            try:
+                                                tts = gTTS(text=translated, lang=tts_lang)
+                                                audio_buf = io.BytesIO()
+                                                tts.write_to_fp(audio_buf)
+                                                audio_buf.seek(0)
+                                                st.audio(audio_buf, format="audio/mp3")
+                                                st.download_button("🔊 Download Audio", audio_buf.getvalue(), file_name="translation.mp3", mime="audio/mpeg")
+                                            except Exception as e:
+                                                st.info(f"Speech not available for {target_name}: {e}")
+                                        else:
+                                            st.info(f"Speech not supported for target language: {target_name}")
+                                    else:
+                                        st.error(error or "Translation failed")
