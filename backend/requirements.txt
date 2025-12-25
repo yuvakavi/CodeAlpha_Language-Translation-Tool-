@@ -2,3 +2,4 @@ fastapi
 uvicorn
 requests
 deep-translator
+python-dotenv

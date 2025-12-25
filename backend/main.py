@@ -2,17 +2,22 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import requests
+import os
+from dotenv import load_dotenv
 from deep_translator import MyMemoryTranslator
+
+load_dotenv()
+
+HF_API_KEY = os.getenv("HUGGINGFACE_API_KEY")
+HF_MODEL = os.getenv("HUGGINGFACE_MODEL", "facebook/m2m100_418M")
+HF_API_URL = f"https://api-inference.huggingface.co/models/{HF_MODEL}"
 
 app = FastAPI()
 
 # Allow Streamlit (localhost:8501) to call this API from the browser
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:8501",
-        "http://127.0.0.1:8501",
-    ],
+    allow_origins=["*"],  # Allow all during local development
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -98,6 +103,40 @@ LANGUAGE_NAMES = {
 
 @app.post("/translate")
 def translate_text(data: TranslateRequest):
+    errors = []
+
+    # Try Hugging Face Inference API first if API key is set and source is not auto
+    if HF_API_KEY and data.source_lang != "auto":
+        try:
+            headers = {
+                "Authorization": f"Bearer {HF_API_KEY}",
+                "Content-Type": "application/json",
+            }
+            payload_hf = {
+                "inputs": data.text,
+                "parameters": {"src_lang": data.source_lang, "tgt_lang": data.target_lang},
+            }
+            r = requests.post(HF_API_URL, headers=headers, json=payload_hf, timeout=15)
+            if not r.ok:
+                errors.append(f"HF {HF_MODEL}: {r.status_code} {r.text}")
+            else:
+                try:
+                    out = r.json()
+                except ValueError:
+                    errors.append("HF: invalid JSON response")
+                else:
+                    translated = None
+                    if isinstance(out, list) and out:
+                        translated = out[0].get("translation_text") or out[0].get("generated_text")
+                    elif isinstance(out, dict):
+                        translated = out.get("translation_text") or out.get("generated_text")
+                    if translated:
+                        return {"translated_text": translated}
+                    else:
+                        errors.append("HF: no translation_text in response")
+        except requests.RequestException as e:
+            errors.append(f"HF unreachable: {e}")
+
     endpoints = [
         "https://libretranslate.de/translate",
         "https://libretranslate.com/translate",
@@ -111,14 +150,13 @@ def translate_text(data: TranslateRequest):
         "format": "text",
     }
 
-    errors = []
     for url in endpoints:
         try:
             response = requests.post(
                 url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
-                timeout=20,
+                timeout=10,
             )
         except requests.RequestException as e:
             errors.append(f"{url}: unreachable ({e})")
@@ -213,15 +251,43 @@ def translate_text(data: TranslateRequest):
     mm_source = mymemory_codes.get(data.source_lang)
     mm_target = mymemory_codes.get(data.target_lang)
 
+    def _split_text_chunks(text: str, max_len: int = 450):
+        # Word-safe chunking, prefer sentence boundaries
+        parts = []
+        current = []
+        length = 0
+        # First split by whitespace, keep punctuation
+        for word in text.split():
+            wlen = len(word) + (1 if length > 0 else 0)
+            if length + wlen > max_len:
+                parts.append(" ".join(current))
+                current = [word]
+                length = len(word)
+            else:
+                if length > 0:
+                    current.append(word)
+                    length += len(word) + 1
+                else:
+                    current = [word]
+                    length = len(word)
+        if current:
+            parts.append(" ".join(current))
+        return parts
+
     # Skip MyMemory if codes unsupported or source is auto
     if mm_target and mm_source and data.source_lang != "auto":
         try:
-            translated = MyMemoryTranslator(
-                source=mm_source,
-                target=mm_target,
-            ).translate(data.text)
-            if translated:
-                return {"translated_text": translated}
+            translator = MyMemoryTranslator(source=mm_source, target=mm_target)
+            chunks = _split_text_chunks(data.text, max_len=450)
+            translated_chunks = []
+            for ch in chunks:
+                tr = translator.translate(ch)
+                if not tr:
+                    errors.append("MyMemory returned empty for a chunk")
+                    continue
+                translated_chunks.append(tr)
+            if translated_chunks:
+                return {"translated_text": " ".join(translated_chunks)}
         except Exception as e:
             errors.append(f"MyMemory fallback failed: {e}")
 

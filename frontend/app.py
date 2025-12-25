@@ -5,13 +5,27 @@ import json
 from gtts import gTTS
 from gtts.lang import tts_langs
 
-st.set_page_config(page_title="Language Translator", layout="centered")
+st.set_page_config(page_title="🌍 Language Translator", page_icon="🌍", layout="centered")
+
+# Subtle UI polish
+st.markdown(
+    """
+    <style>
+    .stButton>button {background:#4A90E2;color:white;border-radius:8px;padding:0.6rem 1rem;font-weight:600;border:0}
+    .stDownloadButton>button {border-radius:8px}
+    .lang-select label {font-weight:600}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.title("🌍 Language Translation Tool")
+st.caption("Translate text across many languages. Supports speech and download.")
 
-text = st.text_area("Enter text")
+text = st.text_area("✍️ Enter text", placeholder="Type or paste your text here...")
+st.caption(f"Characters: {len(text)}")
 
-API_BASE = "http://localhost:8000"
+API_BASE = "http://127.0.0.1:8000"
 
 # Load full language list from backend
 def load_languages():
@@ -45,13 +59,19 @@ target_options = sorted(target_languages.keys())
 default_source = source_options.index("English") if "English" in source_options else 0
 default_target = target_options.index("English") if "English" in target_options else 0
 
-source_name = st.selectbox("Source Language", source_options, index=default_source)
-target_name = st.selectbox("Target Language", target_options, index=default_target)
+col1, col2 = st.columns(2)
+with col1:
+    source_name = st.selectbox("Source Language", source_options, index=default_source)
+with col2:
+    target_name = st.selectbox("Target Language", target_options, index=default_target)
 
-if st.button("Translate"):
+st.divider()
+if st.button("🚀 Translate"):
     if not text.strip():
         st.warning("Please enter some text to translate.")
     else:
+        if len(text) > 500 and source_name == "Auto Detect":
+            st.info("For long texts, select a specific Source Language to improve reliability.")
         payload = {
             "text": text,
             "source_lang": source_languages[source_name],
@@ -62,7 +82,7 @@ if st.button("Translate"):
 
         with st.spinner("Translating..."):
             try:
-                response = requests.post(API_URL, json=payload, timeout=15)
+                response = requests.post(API_URL, json=payload, timeout=30)
             except requests.RequestException as e:
                 st.error(f"Could not reach the backend: {e}")
             else:
@@ -70,7 +90,7 @@ if st.button("Translate"):
                     data = response.json()
                     translated = data.get("translated_text", "")
                     if translated:
-                        st.success("Translated Text")
+                        st.success("✅ Translated Text")
                         st.code(translated)
 
                                                 # Copy button removed per request
