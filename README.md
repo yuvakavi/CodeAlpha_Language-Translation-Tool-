@@ -51,6 +51,22 @@ In two terminals (with venv active):
 - `python -m streamlit run frontend/app.py --server.port 8501`
 - Open the URL shown in the terminal (typically `http://localhost:8501`)
 
+## Streamlit Cloud (no backend)
+You can deploy the Streamlit app alone. In this mode, it talks directly to translation providers.
+
+1. In Streamlit Cloud, set Secrets:
+	- `HUGGINGFACE_API_KEY = hf_...` (recommended)
+	- Optional: `HUGGINGFACE_MODEL = facebook/m2m100_418M`
+	- Optional: `BACKEND_URL = https://your-fastapi-host` (only if you deploy the backend)
+
+2. Ensure frontend requirements include `deep-translator` (already added).
+
+3. Deploy the app. The language dropdown will show the full list even without the backend. Translations will use HF → LibreTranslate → MyMemory fallbacks.
+
+Notes:
+- If `BACKEND_URL` is not set or unreachable, the app automatically uses providers directly.
+- Avoid `Auto Detect` for very long texts for better reliability.
+
 ## Usage
 - Enter text, choose source/target languages, click "Translate".
 - For very long texts, avoid "Auto Detect" and specify the source language for better reliability.
