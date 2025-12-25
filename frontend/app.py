@@ -12,56 +12,103 @@ st.set_page_config(page_title="🌍 Language Translator", page_icon="🌍", layo
 st.markdown(
     """
     <style>
-        with st.spinner("Translating..."):
-            # Prefer backend if configured; otherwise use cloud providers directly
-            translated = None
-            error = None
-            if API_BASE:
-                api_url = f"{API_BASE}/translate"
-                try:
-                    response = requests.post(api_url, json=payload, timeout=30)
-                    if response.ok:
-                        data = response.json()
-                        translated = data.get("translated_text", "")
-                        if not translated:
-                            error = "Backend returned no translated text."
-                    else:
-                        try:
-                            err = response.json().get("detail")
-                        except Exception:
-                            err = response.text
-                        error = f"Translation failed ({response.status_code}).\n{err}"
-                except requests.RequestException:
-                    # Backend unreachable → fall back to cloud providers
-                    translated, error = cloud_translate(text, source_languages[source_name], target_languages[target_name])
-            else:
-                translated, error = cloud_translate(text, source_languages[source_name], target_languages[target_name])
+    .stButton>button {background:#4A90E2;color:white;border-radius:8px;padding:0.6rem 1rem;font-weight:600;border:0}
+    .stDownloadButton>button {border-radius:8px}
+    .lang-select label {font-weight:600}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-            if translated:
-                st.success("✅ Translated Text")
-                st.code(translated)
+st.title("🌍 Language Translation Tool")
+st.caption("Translate text across many languages. Supports speech and download.")
 
-                # Download translated text
-                st.download_button("⬇️ Download Text", translated, file_name="translation.txt")
+text = st.text_area("✍️ Enter text", placeholder="Type or paste your text here...")
+st.caption(f"Characters: {len(text)}")
 
-                # Text-to-speech for the translated output (target language only)
-                supported_tts = tts_langs()
-                tts_code_map = {"zh": "zh-CN", "tl": "fil", "no": "no"}
-                tts_lang = tts_code_map.get(target_languages[target_name], target_languages[target_name])
-                if tts_lang in supported_tts:
-                    try:
-                        tts = gTTS(text=translated, lang=tts_lang)
-                        audio_buf = io.BytesIO()
-                        tts.write_to_fp(audio_buf)
-                        audio_buf.seek(0)
-                        st.audio(audio_buf, format="audio/mp3")
-                        st.download_button("🔊 Download Audio", audio_buf.getvalue(), file_name="translation.mp3", mime="audio/mpeg")
-                    except Exception as e:
-                        st.info(f"Speech not available for {target_name}: {e}")
-                else:
-                    st.info(f"Speech not supported for target language: {target_name}")
-            else:
-                st.error(error or "Translation failed")
+def get_secret(name, default=None):
+    # Prefer Streamlit secrets in cloud, else env variables
+    try:
+        return st.secrets.get(name, default)
+    except Exception:
+        return os.environ.get(name, default)
+
+# Optional backend URL (for when FastAPI is deployed). If not set, use direct providers.
+API_BASE = get_secret("BACKEND_URL")
+
+# Comprehensive language list fallback (when backend isn't reachable)
+LANGUAGE_NAMES = {
+    "af": "Afrikaans",
+    "ar": "Arabic",
+    "as": "Assamese",
+    "bg": "Bulgarian",
+    "bn": "Bengali",
+    "ca": "Catalan",
+    "cs": "Czech",
+    "da": "Danish",
+    "de": "German",
+    "el": "Greek",
+    "en": "English",
+    "es": "Spanish",
+    "et": "Estonian",
+    "fa": "Persian",
+    "fi": "Finnish",
+    "fil": "Filipino",
+    "fr": "French",
+    "gu": "Gujarati",
+    "ha": "Hausa",
+    "he": "Hebrew",
+    "hi": "Hindi",
+    "hr": "Croatian",
+    "hu": "Hungarian",
+    "hy": "Armenian",
+    "id": "Indonesian",
+    "ig": "Igbo",
+    "it": "Italian",
+    "ja": "Japanese",
+    "km": "Khmer",
+    "kn": "Kannada",
+    "ko": "Korean",
+    "lo": "Lao",
+    "lt": "Lithuanian",
+    "lv": "Latvian",
+    "ml": "Malayalam",
+    "mr": "Marathi",
+    "ms": "Malay",
+    "my": "Burmese",
+    "nb": "Norwegian Bokmål",
+    "ne": "Nepali",
+    "nl": "Dutch",
+    "no": "Norwegian",
+    "or": "Odia",
+    "pa": "Punjabi",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "ro": "Romanian",
+    "ru": "Russian",
+    "sd": "Sindhi",
+    "si": "Sinhala",
+    "sk": "Slovak",
+    "sl": "Slovenian",
+    "sr": "Serbian",
+    "sv": "Swedish",
+    "sw": "Swahili",
+    "ta": "Tamil",
+    "te": "Telugu",
+    "th": "Thai",
+    "tl": "Filipino",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "ur": "Urdu",
+    "vi": "Vietnamese",
+    "yo": "Yoruba",
+    "zh": "Chinese",
+    "zu": "Zulu",
+    "xh": "Xhosa",
+}
+
+# Load full language list from backend
+def load_languages():
     # Try backend first if configured
     if API_BASE:
         try:
